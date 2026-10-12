@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import type http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import { databaseProvider, type IDatabaseServices, type PersonaCar } from "rusty-motors-shared";
 import { handleAccountServiceRequest, readAccountServiceSettings, type AccountServiceSettings } from "../src/accountService.js";
@@ -165,12 +166,18 @@ describe("account service settings", () => {
 });
 
 describe("AuthLogin", () => {
-	async function authLogin(name: string, password: string): Promise<string> {
+	async function send(method: string, url: string, body: string): Promise<string> {
 		initializeRouteHandlers();
-		let body = "";
-		const response = { setHeader: () => {}, end: (text: string) => { body = text; } } as unknown as http.ServerResponse;
-		await processHttpRequest({ url: `/AuthLogin?username=${name}&password=${password}` } as http.IncomingMessage, response);
-		return body;
+		let reply = "";
+		const response = { setHeader: () => {}, end: (text: string) => { reply = text; } } as unknown as http.ServerResponse;
+		const request = Object.assign(Readable.from([Buffer.from(body)]), { method, url }) as unknown as http.IncomingMessage;
+		await processHttpRequest(request, response);
+		return reply;
+	}
+
+	function authLogin(name: string, password: string): Promise<string> {
+		const form = new URLSearchParams({ username: name, password, serviceID: "2176", version: "2.0" });
+		return send("POST", "/AuthLogin", form.toString());
 	}
 
 	it("refuses a locked login and lets it in once unlocked", async () => {
@@ -178,5 +185,17 @@ describe("AuthLogin", () => {
 		expect(await authLogin("Marty_88", "flux-capacitor")).toBe("reasoncode=INV-100\nreasontext=This login is locked.\nreasonurl=https://winehq.com");
 		logins[0]!.isLocked = false;
 		expect(await authLogin("Marty_88", "flux-capacitor")).toMatch(/^Valid=TRUE\nTicket=[0-9a-f]{34}$/);
+	});
+
+	it("reads a password with URL-special characters, longer than the game's old 16, exactly as sent", async () => {
+		registerLogins([{ name: "Doc_55", password: "Gig4w4tts#&+%=1.21!", isLocked: false, customerId: 1000002 }]);
+		expect(await authLogin("Doc_55", "Gig4w4tts#&+%=1.21!")).toMatch(/^Valid=TRUE\nTicket=[0-9a-f]{34}$/);
+		expect(await authLogin("Doc_55", "Gig4w4tts")).toBe("reasoncode=INV-100\nreasontext=Opps!\nreasonurl=https://winehq.com");
+	});
+
+	it("answers the game's own GET login with the clearcoat download, without reading its query string", async () => {
+		registerLogins([{ name: "Marty_88", password: "flux-capacitor", isLocked: false, customerId: 1000001 }]);
+		expect(await send("GET", "/AuthLogin?username=Marty_88&password=flux-capacitor&serviceID=2176&version=2.0", "")).toBe(
+			"reasoncode=INV-200\nreasontext=This login needs the current clearcoat.\nreasonurl=https://ammolite.unseencolor.com:1996/packages/clearcoat");
 	});
 });

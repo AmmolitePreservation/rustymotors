@@ -179,12 +179,26 @@ async function handleTicker(): Promise<WebHandlerResponse> {
 
 
 
+const authLoginBodyLimit = 4096;
+const clearcoatDownloadUrl = "https://ammolite.unseencolor.com:1996/packages/clearcoat";
+
+async function readAuthLoginForm(request: http.IncomingMessage): Promise<URLSearchParams> {
+	const chunks: Buffer[] = [];
+	let size = 0;
+	for await (const chunk of request) {
+		size += (chunk as Buffer).length;
+		if (size > authLoginBodyLimit) {
+			throw new Error(`AuthLogin body is longer than ${authLoginBodyLimit} bytes`);
+		}
+		chunks.push(chunk as Buffer);
+	}
+	return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+}
+
 /**
- * Handles the authentication login process.
- *
- * This function processes an incoming HTTP request to handle user login authentication.
- * It retrieves the username from the request URL, checks if the user exists, and responds
- * with an appropriate authentication response.
+ * Handles the authentication login: a POST whose form-encoded body carries username and password (clearcoat's
+ * secureLogin). The game's own login sent them in the URL; that GET is answered with a reason pointing at
+ * clearcoat, and its query string is never read.
  *
  * @param request - The incoming HTTP request object.
  * @param response - The HTTP response object to send the authentication response.
@@ -193,11 +207,15 @@ async function handleAuthLogin(
 	request: http.IncomingMessage,
 	response: http.ServerResponse,
 ): Promise<WebHandlerResponse> {
-	const url = new URL(
-		`http://${process.env["HOST"] ?? "localhost"}${request.url}`,
-	);
-	const username = url.searchParams.get("username") ?? "";
-	const password = url.searchParams.get("password") ?? "";
+	if (request.method !== "POST") {
+		return {
+			headers: { "Content-Type": "text/plain" },
+			body: AuthLoginResponse.createInvalid("INV-200", "This login needs the current clearcoat.", clearcoatDownloadUrl).formatResponse(),
+		};
+	}
+	const form = await readAuthLoginForm(request);
+	const username = form.get("username") ?? "";
+	const password = form.get("password") ?? "";
 
 	response.setHeader("Content-Type", "text/plain");
 	let authResponse: AuthLoginResponse;
