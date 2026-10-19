@@ -124,6 +124,16 @@ export async function mcotsPortRouter({
             clearPartialBuffer(connectionId);
         }),
     );
+
+    // 'close' fires once however the socket ends; 'end' and 'error' do not cover every way a peer can go.
+    // A queue left running polls every 10 ms for the life of the process.
+    socket.on(
+        'close',
+        bindLogContext(() => {
+            receiveQueue.exit();
+            clearPartialBuffer(connectionId);
+        }),
+    );
 }
 
 /**

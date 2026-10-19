@@ -9,6 +9,7 @@ import {
     MessageQueue,
     getSocketQueue,
     addSocketPair,
+    removeSocketPair,
     resolveMessageId,
 } from 'rusty-motors-shared';
 import { bindLogContext } from '@rustymotors/logging';
@@ -180,6 +181,17 @@ export async function npsPortRouter({
             log.error(`[${connectionId}] Socket error: ${error}`);
             receiveQueue.exit();
             sendQueue.exit();
+        }),
+    );
+
+    // 'close' fires once however the socket ends; 'end' and 'error' do not cover every way a peer can go.
+    // A queue left running polls every 10 ms for the life of the process.
+    socket.on(
+        'close',
+        bindLogContext(() => {
+            receiveQueue.exit();
+            sendQueue.exit();
+            removeSocketPair(connectionId);
         }),
     );
 }

@@ -202,6 +202,10 @@ export function addSocketPair(connectionId: string, pair: SocketQueuePair) {
     socketQueues.set(connectionId, pair);
 }
 
+export function removeSocketPair(connectionId: string) {
+    socketQueues.delete(connectionId);
+}
+
 export function getSocketQueue(
     connectionId: string,
     direction: 'send' | 'receive',
