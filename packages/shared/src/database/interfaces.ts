@@ -89,6 +89,11 @@ export interface IAuthStore {
         password: string,
     ): Promise<{ customerId: number; userName: string; loginLevel: number; isLocked: boolean }>;
 
+    /** A login by its exact name, for one the site has checked; undefined when there is none. */
+    findLogin(
+        loginName: string,
+    ): Promise<{ customerId: number; userName: string; loginLevel: number; isLocked: boolean } | undefined>;
+
     findCustomerByContext(contextId: string): UserRecordMini | undefined;
 
     updateSession(

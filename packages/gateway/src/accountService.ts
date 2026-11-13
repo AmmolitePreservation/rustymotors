@@ -72,7 +72,7 @@ export function readAccountServiceSettings(path: string): AccountServiceSettings
 	return settings as AccountServiceSettings;
 }
 
-function plainAddress(address: string | undefined): string {
+export function plainAddress(address: string | undefined): string {
 	return (address ?? "").replace(/^::ffff:/, "");
 }
 

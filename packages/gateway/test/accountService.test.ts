@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
-import type http from "node:http";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import { databaseProvider, type IDatabaseServices, type PersonaCar } from "rusty-motors-shared";
 import { handleAccountServiceRequest, readAccountServiceSettings, type AccountServiceSettings } from "../src/accountService.js";
+import { readSiteLoginCheckSettings, useSiteLoginCheck } from "../src/siteLoginCheck.js";
 import { initializeRouteHandlers, processHttpRequest } from "../src/web.js";
 
 const token = "a-token-only-ammolite-holds";
@@ -52,6 +54,10 @@ function registerLogins(logins: Login[], personas: { loginName: string; personaN
 					login.isLocked = isLocked;
 				}
 				return typeof login !== "undefined";
+			},
+			findLogin: async (name: string) => {
+				const login = logins.find((candidate) => candidate.name === name);
+				return login ? { customerId: login.customerId, userName: login.name, loginLevel: 0, isLocked: login.isLocked } : undefined;
 			},
 			findLogins: async (names: string[]) => logins.map((login) => login.name).filter((name) => names.includes(name)),
 			countLogins: async () => logins.length,
@@ -170,7 +176,11 @@ describe("AuthLogin", () => {
 		initializeRouteHandlers();
 		let reply = "";
 		const response = { setHeader: () => {}, end: (text: string) => { reply = text; } } as unknown as http.ServerResponse;
-		const request = Object.assign(Readable.from([Buffer.from(body)]), { method, url }) as unknown as http.IncomingMessage;
+		const request = Object.assign(Readable.from([Buffer.from(body)]), {
+			method,
+			url,
+			socket: { remoteAddress: "::ffff:203.0.113.9" },
+		}) as unknown as http.IncomingMessage;
 		await processHttpRequest(request, response);
 		return reply;
 	}
@@ -197,5 +207,106 @@ describe("AuthLogin", () => {
 		registerLogins([{ name: "Marty_88", password: "flux-capacitor", isLocked: false, customerId: 1000001 }]);
 		expect(await send("GET", "/AuthLogin?username=Marty_88&password=flux-capacitor&serviceID=2176&version=2.0", "")).toBe(
 			"reasoncode=INV-200\nreasontext=This login needs the current clearcoat.\nreasonurl=https://ammolite.unseencolor.com:1996/packages/clearcoat");
+	});
+
+	describe("checked with the site", () => {
+		const loginServerToken = "a-login-server-token-only-the-site-and-fordite-hold";
+		let site: http.Server | undefined;
+		const asked: { authorization: string | undefined; body: unknown }[] = [];
+
+		// The site's login check, answering every request with status and answer.
+		async function startSite(status: number, answer: unknown): Promise<string> {
+			site = http.createServer((request, response) => {
+				const chunks: Buffer[] = [];
+				request.on("data", (chunk: Buffer) => chunks.push(chunk));
+				request.on("end", () => {
+					asked.push({ authorization: request.headers.authorization, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) });
+					response.writeHead(status, { "Content-Type": "application/json" });
+					response.end(JSON.stringify(answer));
+				});
+			});
+			await new Promise<void>((resolve) => site!.listen(0, "127.0.0.1", resolve));
+			const checkUrl = `http://127.0.0.1:${(site.address() as AddressInfo).port}/api/v1/loginServer/check`;
+			useSiteLoginCheck({ checkUrl, token: loginServerToken });
+			return checkUrl;
+		}
+
+		afterEach(async () => {
+			useSiteLoginCheck(undefined);
+			asked.length = 0;
+			if (site) {
+				await new Promise<void>((resolve) => site!.close(() => resolve()));
+				site = undefined;
+			}
+		});
+
+		it("sends the name, the password and the player's address, and logs in the account the site names", async () => {
+			registerLogins([{ name: "Marty_88", password: "its-own-password-unused", isLocked: false, customerId: 1000001 }]);
+			await startSite(200, { accountName: "Marty_88" });
+			expect(await authLogin("marty_88", "the-site-password")).toMatch(/^Valid=TRUE\nTicket=[0-9a-f]{34}$/);
+			expect(asked).toEqual([{
+				authorization: `Bearer ${loginServerToken}`,
+				body: { username: "marty_88", password: "the-site-password", playerAddress: "203.0.113.9" },
+			}]);
+		});
+
+		it("never reads the server's own password", async () => {
+			registerLogins([{ name: "Marty_88", password: "flux-capacitor", isLocked: false, customerId: 1000001 }]);
+			await startSite(401, { error: "Invalid username or password." });
+			expect(await authLogin("Marty_88", "flux-capacitor")).toBe(
+				"reasoncode=INV-100\nreasontext=Invalid username or password.\nreasonurl=https://winehq.com");
+		});
+
+		it("shows the site's lockout", async () => {
+			registerLogins([]);
+			await startSite(429, { error: "Too many failed attempts. Try again later." });
+			expect(await authLogin("Marty_88", "anything")).toBe(
+				"reasoncode=INV-100\nreasontext=Too many failed attempts. Try again later.\nreasonurl=https://winehq.com");
+		});
+
+		it("keeps a locked login locked", async () => {
+			registerLogins([{ name: "Marty_88", password: "unused", isLocked: true, customerId: 1000001 }]);
+			await startSite(200, { accountName: "Marty_88" });
+			expect(await authLogin("Marty_88", "the-site-password")).toBe(
+				"reasoncode=INV-100\nreasontext=This login is locked.\nreasonurl=https://winehq.com");
+		});
+
+		it("refuses an account the site names that is no login here", async () => {
+			registerLogins([]);
+			await startSite(200, { accountName: "Doc_55" });
+			expect(await authLogin("Doc_55", "the-site-password")).toBe(
+				"reasoncode=INV-100\nreasontext=Your account is not on this server yet.\nreasonurl=https://winehq.com");
+		});
+
+		it("refuses every login while the site cannot be reached", async () => {
+			registerLogins([{ name: "Marty_88", password: "flux-capacitor", isLocked: false, customerId: 1000001 }]);
+			const checkUrl = await startSite(200, { accountName: "Marty_88" });
+			await new Promise<void>((resolve) => site!.close(() => resolve()));
+			site = undefined;
+			useSiteLoginCheck({ checkUrl, token: loginServerToken });
+			expect(await authLogin("Marty_88", "flux-capacitor")).toBe(
+				"reasoncode=INV-100\nreasontext=The account service could not be reached.\nreasonurl=https://winehq.com");
+		});
+	});
+});
+
+describe("site login check settings", () => {
+	const good = { checkUrl: "https://ammolite.unseencolor.com:1996/api/v1/loginServer/check", token: "A".repeat(43) };
+
+	function settingsFile(contents: unknown): string {
+		const path = join(mkdtempSync(join(tmpdir(), "siteLoginCheck")), "siteLoginCheck.json");
+		writeFileSync(path, JSON.stringify(contents));
+		return path;
+	}
+
+	it("reads the address and the token", () => {
+		expect(readSiteLoginCheckSettings(settingsFile(good))).toEqual(good);
+	});
+
+	it("refuses a missing file, other settings, a plain http address, or a token that is not the site's", () => {
+		expect(() => readSiteLoginCheckSettings(join(tmpdir(), "noSuchSiteLoginCheckFile.json"))).toThrow(/ENOENT/);
+		expect(() => readSiteLoginCheckSettings(settingsFile({ ...good, port: 1 }))).toThrow(/exactly checkUrl and token/);
+		expect(() => readSiteLoginCheckSettings(settingsFile({ ...good, checkUrl: "http://ammolite.unseencolor.com/check" }))).toThrow(/https/);
+		expect(() => readSiteLoginCheckSettings(settingsFile({ ...good, token: "short" }))).toThrow(/token/);
 	});
 });

@@ -20,6 +20,8 @@ import { CastanetResponse } from "./CastanetResponse.js";
 import { generateShardList } from "rusty-motors-shard";
 import { getServerConfiguration, getServerLogger, type ServerLogger, databaseProvider } from "rusty-motors-shared";
 import { createPartsCatalog } from "rusty-motors-database";
+import { plainAddress } from "./accountService.js";
+import { checkLoginWithSite, siteLoginCheck } from "./siteLoginCheck.js";
 import type { GatewayConfiguration } from "./configuration/GatewayConfiguration.js";
 
 type WebHandlerResponse = {
@@ -195,6 +197,39 @@ async function readAuthLoginForm(request: http.IncomingMessage): Promise<URLSear
 	return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
 }
 
+type AuthLoginUser = { customerId: number; isLocked: boolean };
+
+/**
+ * The login the name and password stand for: the account the site names when the server checks logins with the site
+ * (siteLoginCheck), otherwise the server's own login with that password. A refusal is the sentence to show the player.
+ */
+async function findAuthLoginUser(username: string, password: string, playerAddress: string): Promise<AuthLoginUser | { refusal: string }> {
+	const siteCheck = siteLoginCheck();
+	if (typeof siteCheck === "undefined") {
+		try {
+			return await databaseProvider.getAuthStore().findUser(username, password);
+		} catch {
+			return { refusal: "Opps!" };
+		}
+	}
+	let verdict;
+	try {
+		verdict = await checkLoginWithSite(siteCheck, username, password, playerAddress);
+	} catch (error) {
+		getServerLogger("gateway.web").error(`AuthLogin could not check with the site: ${String(error)}`);
+		return { refusal: "The account service could not be reached." };
+	}
+	if ("refusal" in verdict) {
+		return verdict;
+	}
+	const login = await databaseProvider.getAuthStore().findLogin(verdict.accountName);
+	if (typeof login === "undefined") {
+		getServerLogger("gateway.web").error(`AuthLogin: the site passed ${verdict.accountName}, which is no login here`);
+		return { refusal: "Your account is not on this server yet." };
+	}
+	return login;
+}
+
 /**
  * Handles the authentication login: a POST whose form-encoded body carries username and password (clearcoat's
  * secureLogin). The game's own login sent them in the URL; that GET is answered with a reason pointing at
@@ -219,22 +254,12 @@ async function handleAuthLogin(
 
 	response.setHeader("Content-Type", "text/plain");
 	let authResponse: AuthLoginResponse;
-	authResponse = AuthLoginResponse.createInvalid(
-		"INV-100",
-		"Opps!",
-		"https://winehq.com",
-	);
-
-	let user = null;
-	try {
-		user = await databaseProvider.getAuthStore().findUser(username, password);
-	} catch {
-		// User not found or invalid password
-	}
-
-	if (user !== null && user.isLocked) {
+	const user = await findAuthLoginUser(username, password, plainAddress(request.socket?.remoteAddress));
+	if ("refusal" in user) {
+		authResponse = AuthLoginResponse.createInvalid("INV-100", user.refusal, "https://winehq.com");
+	} else if (user.isLocked) {
 		authResponse = AuthLoginResponse.createInvalid("INV-100", "This login is locked.", "https://winehq.com");
-	} else if (user !== null) {
+	} else {
 		// 34 hex characters, the length of the client's own tickets.
 		const ticket = randomBytes(17).toString("hex");
 		databaseProvider.getAuthStore().startSession(user.customerId, ticket);

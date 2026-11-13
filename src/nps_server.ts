@@ -15,7 +15,14 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import * as Sentry from '@sentry/node';
-import { Gateway, initializeServiceRegistry, readAccountServiceSettings, startAccountService } from 'rusty-motors-gateway';
+import {
+    Gateway,
+    initializeServiceRegistry,
+    readAccountServiceSettings,
+    readSiteLoginCheckSettings,
+    startAccountService,
+    useSiteLoginCheck,
+} from 'rusty-motors-gateway';
 import {
     getServerLogger,
     verifyLegacyCipherSupport,
@@ -91,6 +98,17 @@ function main() {
 
         coreLogger.info('Starting server');
         gatewayServer.start();
+
+        // Ammolite's check of a login: with its settings file AuthLogin asks the site, and the server's own passwords
+        // are no longer read.
+        const siteLoginCheckSettingsPath = process.env['SITE_LOGIN_CHECK_SETTINGS'];
+        if (siteLoginCheckSettingsPath) {
+            const siteLoginCheckSettings = readSiteLoginCheckSettings(siteLoginCheckSettingsPath);
+            useSiteLoginCheck(siteLoginCheckSettings);
+            coreLogger.info(`AuthLogin checks logins with the site at ${new URL(siteLoginCheckSettings.checkUrl).host}`);
+        } else {
+            coreLogger.info('AuthLogin checks the server\'s own logins: SITE_LOGIN_CHECK_SETTINGS is not set');
+        }
 
         // ammolite's account service: the link script writes its settings file; without one the
         // server is not linked to the portal.

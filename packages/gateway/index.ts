@@ -1,5 +1,6 @@
 export { Gateway } from "./src/GatewayServer.js";
 export { readAccountServiceSettings, startAccountService } from "./src/accountService.js";
+export { readSiteLoginCheckSettings, useSiteLoginCheck } from "./src/siteLoginCheck.js";
 export {
 	createCommandEncryptionPair,
 	createDataEncryptionPair,

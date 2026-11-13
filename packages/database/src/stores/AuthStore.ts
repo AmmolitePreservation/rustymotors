@@ -178,6 +178,24 @@ export class AuthStore implements IAuthStore {
         };
     }
 
+    async findLogin(
+        loginName: string,
+    ): Promise<{ customerId: number; userName: string; loginLevel: number; isLocked: boolean } | undefined> {
+        const userRecords = (await this.ensurePostgresPool().query(
+            sql`SELECT * FROM login WHERE login_name = ${loginName}`,
+        )) as unknown as DBLogin[];
+        const user = userRecords[0];
+        if (typeof user === "undefined") {
+            return undefined;
+        }
+        return {
+            customerId: user.customer_id,
+            userName: user.login_name,
+            loginLevel: user.login_level,
+            isLocked: user.is_locked,
+        };
+    }
+
     async createLogin(loginName: string, password: string): Promise<number | undefined> {
         const passwordHash = await hash(password, passwordHashRounds);
         const rows = (await this.ensurePostgresPool().query(sql`
