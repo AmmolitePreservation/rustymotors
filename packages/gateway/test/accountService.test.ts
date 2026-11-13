@@ -219,14 +219,21 @@ describe("account service settings", () => {
 });
 
 describe("AuthLogin", () => {
-	async function send(method: string, url: string, body: string): Promise<string> {
+	async function send(
+		method: string,
+		url: string,
+		body: string,
+		peer = "::ffff:203.0.113.9",
+		headers: Record<string, string> = {},
+	): Promise<string> {
 		initializeRouteHandlers();
 		let reply = "";
 		const response = { setHeader: () => {}, end: (text: string) => { reply = text; } } as unknown as http.ServerResponse;
 		const request = Object.assign(Readable.from([Buffer.from(body)]), {
 			method,
 			url,
-			socket: { remoteAddress: "::ffff:203.0.113.9" },
+			headers,
+			socket: { remoteAddress: peer },
 		}) as unknown as http.IncomingMessage;
 		await processHttpRequest(request, response);
 		return reply;
@@ -295,6 +302,17 @@ describe("AuthLogin", () => {
 				authorization: `Bearer ${loginServerToken}`,
 				body: { username: "marty_88", password: "the-site-password", playerAddress: "203.0.113.9" },
 			}]);
+		});
+
+		it("takes the player's address from nginx's X-Forwarded-For, and from no other peer", async () => {
+			registerLogins([{ name: "Marty_88", password: "unused", isLocked: false, customerId: 1000001 }]);
+			await startSite(200, { accountName: "Marty_88" });
+			const form = new URLSearchParams({ username: "Marty_88", password: "p", serviceID: "2176", version: "2.0" }).toString();
+			await send("POST", "/AuthLogin", form, "127.0.0.1", { "x-forwarded-for": "198.51.100.4" });
+			await send("POST", "/AuthLogin", form, "::ffff:203.0.113.9", { "x-forwarded-for": "198.51.100.4" });
+			await send("POST", "/AuthLogin", form, "127.0.0.1", { "x-forwarded-for": "not an address" });
+			expect(asked.map((request) => (request.body as { playerAddress: string }).playerAddress)).toEqual(
+				["198.51.100.4", "203.0.113.9", "127.0.0.1"]);
 		});
 
 		it("never reads the server's own password", async () => {

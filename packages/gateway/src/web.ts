@@ -20,6 +20,7 @@ import { CastanetResponse } from "./CastanetResponse.js";
 import { generateShardList } from "rusty-motors-shard";
 import { getServerConfiguration, getServerLogger, type ServerLogger, databaseProvider } from "rusty-motors-shared";
 import { createPartsCatalog } from "rusty-motors-database";
+import { isIP } from "node:net";
 import { plainAddress } from "./accountService.js";
 import { checkLoginWithSite, siteLoginCheck } from "./siteLoginCheck.js";
 import type { GatewayConfiguration } from "./configuration/GatewayConfiguration.js";
@@ -200,6 +201,19 @@ async function readAuthLoginForm(request: http.IncomingMessage): Promise<URLSear
 type AuthLoginUser = { customerId: number; isLocked: boolean };
 
 /**
+ * Where the player's login came from: nginx, which serves the HTTPS login and reaches this server over loopback, sets
+ * X-Forwarded-For to the player's address; from any other peer the header is not trusted.
+ */
+function playerAddressOf(request: http.IncomingMessage): string {
+	const peer = plainAddress(request.socket?.remoteAddress);
+	const forwarded = request.headers?.["x-forwarded-for"];
+	if ((peer === "127.0.0.1" || peer === "::1") && typeof forwarded === "string" && isIP(forwarded.trim()) !== 0) {
+		return forwarded.trim();
+	}
+	return peer;
+}
+
+/**
  * The login the name and password stand for: the account the site names when the server checks logins with the site
  * (siteLoginCheck), otherwise the server's own login with that password. A refusal is the sentence to show the player.
  */
@@ -254,7 +268,7 @@ async function handleAuthLogin(
 
 	response.setHeader("Content-Type", "text/plain");
 	let authResponse: AuthLoginResponse;
-	const user = await findAuthLoginUser(username, password, plainAddress(request.socket?.remoteAddress));
+	const user = await findAuthLoginUser(username, password, playerAddressOf(request));
 	if ("refusal" in user) {
 		authResponse = AuthLoginResponse.createInvalid("INV-100", user.refusal, "https://winehq.com");
 	} else if (user.isLocked) {
