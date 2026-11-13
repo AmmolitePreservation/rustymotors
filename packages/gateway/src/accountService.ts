@@ -20,6 +20,7 @@ import http from "node:http";
 import {
 	carDisplayName,
 	databaseProvider,
+	maximumPersonasPerCustomer,
 	personaLevel,
 	personaRank,
 	reputationRanks,
@@ -45,6 +46,8 @@ const loginNamePattern = /^[A-Za-z0-9_]{3,32}$/;
 // bcrypt reads at most 72 bytes of a password.
 const passwordPattern = /^[!-~]{1,72}$/;
 const maximumLoginsPerCall = 100;
+// player.persona is VARCHAR(30).
+const personaNameLength = 30;
 const maximumBodyBytes = 64 * 1024;
 const loopbackAddresses = ["127.0.0.1", "::1"];
 
@@ -105,6 +108,19 @@ function requiredLoginNames(body: Record<string, unknown>): string[] {
 	});
 }
 
+function requiredPersonaNames(body: Record<string, unknown>): string[] {
+	const names = body["characters"];
+	if (!Array.isArray(names) || names.length === 0 || names.length > maximumPersonasPerCustomer) {
+		throw new RequestError(`characters must list 1 to ${maximumPersonasPerCustomer} persona names`);
+	}
+	return names.map((name) => {
+		if (typeof name !== "string" || name.length < 1 || name.length > personaNameLength) {
+			throw new RequestError(`characters holds a name that is not 1 to ${personaNameLength} characters of text`);
+		}
+		return name;
+	});
+}
+
 /** Answers one request that has passed the address and token checks. */
 export async function answerAccountRequest(path: string, body: Record<string, unknown>): Promise<Reply> {
 	const logins = databaseProvider.getAuthStore();
@@ -133,6 +149,18 @@ export async function answerAccountRequest(path: string, body: Record<string, un
 			const account = requiredText(body, "account", loginNamePattern);
 			const isChanged = await logins.setLoginLocked(account, path === "/v1/accounts/lock");
 			return isChanged ? [200, {}] : [404, { error: "no such login" }];
+		}
+		case "/v1/characters/move": {
+			const from = requiredText(body, "from", loginNamePattern);
+			const to = requiredText(body, "to", loginNamePattern);
+			const personaNames = requiredPersonaNames(body);
+			const source = await logins.findLogin(from);
+			const target = await logins.findLogin(to);
+			if (typeof source === "undefined" || typeof target === "undefined") {
+				return [404, { error: `no such login: ${typeof source === "undefined" ? from : to}` }];
+			}
+			const result = await databaseProvider.getPersonaStore().movePersonas(personaNames, source.customerId, target.customerId);
+			return "refusal" in result ? [409, { error: result.refusal }] : [200, { moved: result.moved }];
 		}
 		case "/v1/characters": {
 			const accounts = requiredLoginNames(body);

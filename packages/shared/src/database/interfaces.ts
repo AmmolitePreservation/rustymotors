@@ -186,6 +186,14 @@ export interface IPersonaStore {
 
     /** The live personas of the given logins, by login name and persona name, with each one's first car. */
     listPersonasOfLogins(loginNames: string[]): Promise<{ loginName: string; personaName: string; car: PersonaCar | null }[]>;
+
+    /**
+     * Moves live personas, by name, from one customer to another in one transaction, cars and all (they belong to the
+     * persona). Refused, with nothing moved, when a name is not a live persona of fromCustomerId or toCustomerId would
+     * hold more than maximumPersonasPerCustomer. The server keeps no reliable online state, so a persona moves whether or
+     * not its owner is logged in. Returns the names as stored.
+     */
+    movePersonas(personaNames: string[], fromCustomerId: number, toCustomerId: number): Promise<{ moved: string[] } | { refusal: string }>;
 }
 
 /**

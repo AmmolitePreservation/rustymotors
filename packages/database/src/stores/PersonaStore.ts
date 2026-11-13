@@ -17,7 +17,7 @@
 import { randomInt } from "node:crypto";
 import * as pg from "@databases/pg";
 import { type ConnectionPool, type ConnectionPoolConfig, type SQLQuery, sql } from "@databases/pg";
-import { type IPersonaStore, type PersonaCar, type PersonaOptions, type PersonaPhysical, type PersonaPlayer, type PersonaSummary, starterCash } from "rusty-motors-shared";
+import { type IPersonaStore, maximumPersonasPerCustomer, type PersonaCar, type PersonaOptions, type PersonaPhysical, type PersonaPlayer, type PersonaSummary, starterCash } from "rusty-motors-shared";
 
 type createConnectionPool = (
     connectionConfig?: string | ConnectionPoolConfig | undefined,
@@ -205,6 +205,32 @@ export class PersonaStore implements IPersonaStore {
         if (updated.length !== 1) {
             throw new Error(`There is no live persona ${personaId} to update`);
         }
+    }
+
+    async movePersonas(personaNames: string[], fromCustomerId: number, toCustomerId: number): Promise<{ moved: string[] } | { refusal: string }> {
+        const wanted = personaNames.map((name) => name.toLowerCase());
+        return this.pool.tx(async (transaction) => {
+            const found = (await transaction.query(sql`
+                SELECT player.player_id, player.persona FROM player
+                JOIN profile ON profile.profile_id = player.player_id AND profile.customer_id = player.customer_id
+                WHERE player.customer_id = ${fromCustomerId} AND player.player_type_id <> ${deletedPlayerType}
+                    AND lower(player.persona) = ANY(${wanted})
+                FOR UPDATE OF player, profile`)) as { player_id: number; persona: string }[];
+            const missing = personaNames.filter((name) => !found.some((row) => row.persona.toLowerCase() === name.toLowerCase()));
+            if (missing.length > 0) {
+                return { refusal: `not a persona of that login: ${missing.join(", ")}` };
+            }
+            const [{ held }] = (await transaction.query(sql`
+                SELECT count(*)::integer AS held FROM player
+                WHERE customer_id = ${toCustomerId} AND player_type_id <> ${deletedPlayerType}`)) as [{ held: number }];
+            if (held + found.length > maximumPersonasPerCustomer) {
+                return { refusal: `the login would hold ${held + found.length} personas; the game shows at most ${maximumPersonasPerCustomer}` };
+            }
+            const ids = found.map((row) => row.player_id);
+            await transaction.query(sql`UPDATE player SET customer_id = ${toCustomerId} WHERE player_id = ANY(${ids})`);
+            await transaction.query(sql`UPDATE profile SET customer_id = ${toCustomerId} WHERE profile_id = ANY(${ids})`);
+            return { moved: found.map((row) => row.persona) };
+        });
     }
 
     async listPersonasOfLogins(loginNames: string[]): Promise<{ loginName: string; personaName: string; car: PersonaCar | null }[]> {

@@ -21,7 +21,15 @@ const settings: AccountServiceSettings = {
 
 type Login = { name: string; password: string; isLocked: boolean; customerId: number };
 
-function registerLogins(logins: Login[], personas: { loginName: string; personaName: string; car: PersonaCar | null }[] = []): Login[] {
+type MovePersonas = (names: string[], fromCustomerId: number, toCustomerId: number) => Promise<{ moved: string[] } | { refusal: string }>;
+
+function registerLogins(
+	logins: Login[],
+	personas: { loginName: string; personaName: string; car: PersonaCar | null }[] = [],
+	movePersonas: MovePersonas = async () => {
+		throw new Error("no move expected");
+	},
+): Login[] {
 	databaseProvider.register({
 		auth: {
 			findUser: async (name: string, password: string) => {
@@ -64,6 +72,7 @@ function registerLogins(logins: Login[], personas: { loginName: string; personaN
 		},
 		persona: {
 			listPersonasOfLogins: async (names: string[]) => personas.filter((persona) => names.includes(persona.loginName)),
+			movePersonas,
 		},
 	} as unknown as IDatabaseServices);
 	return logins;
@@ -149,6 +158,44 @@ describe("account service characters", () => {
 			],
 		}]);
 		expect(await call("/v1/characters", { accounts: [] })).toEqual([400, { error: "accounts must list 1-100 logins" }]);
+	});
+});
+
+describe("account service persona moves", () => {
+	const twoLogins = [
+		{ name: "Marty_88", password: "x", isLocked: false, customerId: 1000001 },
+		{ name: "martymcfly", password: "y", isLocked: false, customerId: 1000002 },
+	];
+
+	it("moves the named personas from one login's customer to the other's", async () => {
+		const asked: [string[], number, number][] = [];
+		registerLogins(twoLogins, [], async (names, from, to) => {
+			asked.push([names, from, to]);
+			return { moved: ["Marty"] };
+		});
+		expect(await call("/v1/characters/move", { characters: ["marty"], from: "Marty_88", to: "martymcfly" })).toEqual([200, { moved: ["Marty"] }]);
+		expect(asked).toEqual([[["marty"], 1000001, 1000002]]);
+	});
+
+	it("passes the store's refusal on as a conflict", async () => {
+		registerLogins(twoLogins, [], async () => ({ refusal: "not a persona of that login: Biff" }));
+		expect(await call("/v1/characters/move", { characters: ["Biff"], from: "Marty_88", to: "martymcfly" })).toEqual(
+			[409, { error: "not a persona of that login: Biff" }]);
+	});
+
+	it("names a login it does not have, and moves nothing", async () => {
+		registerLogins(twoLogins);
+		expect(await call("/v1/characters/move", { characters: ["Marty"], from: "Marty_88", to: "docbrown" })).toEqual(
+			[404, { error: "no such login: docbrown" }]);
+	});
+
+	it("refuses a malformed list of personas", async () => {
+		registerLogins(twoLogins);
+		const move = (characters: unknown) => call("/v1/characters/move", { characters, from: "Marty_88", to: "martymcfly" });
+		expect(await move([])).toEqual([400, { error: "characters must list 1 to 5 persona names" }]);
+		expect(await move(["a", "b", "c", "d", "e", "f"])).toEqual([400, { error: "characters must list 1 to 5 persona names" }]);
+		expect(await move(["x".repeat(31)])).toEqual([400, { error: "characters holds a name that is not 1 to 30 characters of text" }]);
+		expect(await move([7])).toEqual([400, { error: "characters holds a name that is not 1 to 30 characters of text" }]);
 	});
 });
 
