@@ -102,12 +102,12 @@ function main() {
         // Ammolite's check of a login: with its settings file AuthLogin asks the site, and the server's own passwords
         // are no longer read.
         const siteLoginCheckSettingsPath = process.env['SITE_LOGIN_CHECK_SETTINGS'];
-        if (siteLoginCheckSettingsPath) {
-            const siteLoginCheckSettings = readSiteLoginCheckSettings(siteLoginCheckSettingsPath);
-            useSiteLoginCheck(siteLoginCheckSettings);
+        const siteLoginCheckSettings = siteLoginCheckSettingsPath ? readSiteLoginCheckSettings(siteLoginCheckSettingsPath) : undefined;
+        useSiteLoginCheck(siteLoginCheckSettings);
+        if (siteLoginCheckSettings) {
             coreLogger.info(`AuthLogin checks logins with the site at ${new URL(siteLoginCheckSettings.checkUrl).host}`);
         } else {
-            coreLogger.info('AuthLogin checks the server\'s own logins: SITE_LOGIN_CHECK_SETTINGS is not set');
+            coreLogger.info(`AuthLogin checks the server's own logins: ${siteLoginCheckSettingsPath ? `${siteLoginCheckSettingsPath} does not exist` : 'SITE_LOGIN_CHECK_SETTINGS is not set'}`);
         }
 
         // ammolite's account service: the link script writes its settings file; without one the

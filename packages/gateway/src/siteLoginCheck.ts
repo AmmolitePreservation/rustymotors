@@ -1,7 +1,8 @@
-// Ammolite's check of a login. With SITE_LOGIN_CHECK_SETTINGS set, AuthLogin asks the site whether the name and
-// password a player gave are good (the player's site name with their site password, or with a login key the site gave
-// the client Ankh started) and keeps no password of its own for it; without it AuthLogin checks the server's own logins.
-import { readFileSync } from "node:fs";
+// Ammolite's check of a login. While the file SITE_LOGIN_CHECK_SETTINGS names exists, AuthLogin asks the site whether
+// the name and password a player gave are good (the player's site name with their site password, or with a login key
+// the site gave the client Ankh started) and reads no password of its own; without it AuthLogin checks the server's own
+// logins. A link script writes the file, as it does the account service's.
+import { existsSync, readFileSync } from "node:fs";
 
 export type SiteLoginCheckSettings = { checkUrl: string; token: string };
 export type SiteLoginVerdict = { accountName: string } | { refusal: string };
@@ -10,7 +11,10 @@ const checkTimeoutMilliseconds = 15000;
 
 let activeSettings: SiteLoginCheckSettings | undefined;
 
-export function readSiteLoginCheckSettings(path: string): SiteLoginCheckSettings {
+export function readSiteLoginCheckSettings(path: string): SiteLoginCheckSettings | undefined {
+	if (!existsSync(path)) {
+		return undefined;
+	}
 	const settings = JSON.parse(readFileSync(path, "utf8")) as Partial<SiteLoginCheckSettings>;
 	const keys = Object.keys(settings).sort().join(",");
 	if (keys !== "checkUrl,token") {

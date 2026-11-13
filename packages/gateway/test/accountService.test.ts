@@ -368,8 +368,11 @@ describe("site login check settings", () => {
 		expect(readSiteLoginCheckSettings(settingsFile(good))).toEqual(good);
 	});
 
-	it("refuses a missing file, other settings, a plain http address, or a token that is not the site's", () => {
-		expect(() => readSiteLoginCheckSettings(join(tmpdir(), "noSuchSiteLoginCheckFile.json"))).toThrow(/ENOENT/);
+	it("reads an absent file as the check being off", () => {
+		expect(readSiteLoginCheckSettings(join(tmpdir(), "noSuchSiteLoginCheckFile.json"))).toBeUndefined();
+	});
+
+	it("refuses other settings, a plain http address, or a token that is not the site's", () => {
 		expect(() => readSiteLoginCheckSettings(settingsFile({ ...good, port: 1 }))).toThrow(/exactly checkUrl and token/);
 		expect(() => readSiteLoginCheckSettings(settingsFile({ ...good, checkUrl: "http://ammolite.unseencolor.com/check" }))).toThrow(/https/);
 		expect(() => readSiteLoginCheckSettings(settingsFile({ ...good, token: "short" }))).toThrow(/token/);
