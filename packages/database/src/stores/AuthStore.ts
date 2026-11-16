@@ -41,10 +41,12 @@ const SQL = {
     ) STRICT`,
     UPDATE_SESSION:
         "INSERT OR REPLACE INTO session (contextId, customerId, profileId) VALUES (?, ?, ?)",
-    DELETE_CUSTOMER_SESSIONS: "DELETE FROM session WHERE customerId = ?",
+    // Each login is its own session: several clients of one customer play at once. The newest 100 are kept.
+    DELETE_OLD_CUSTOMER_SESSIONS:
+        "DELETE FROM session WHERE customerId = ? AND id NOT IN (SELECT id FROM session WHERE customerId = ? ORDER BY id DESC LIMIT 99)",
     FIND_SESSION_BY_CONTEXT: "SELECT * FROM session WHERE contextId = ?",
     BIND_SESSION_ADDRESS: "UPDATE session SET remoteAddress = ? WHERE contextId = ?",
-    FIND_SESSION_ADDRESS: "SELECT remoteAddress FROM session WHERE customerId = ? AND remoteAddress IS NOT NULL",
+    FIND_SESSION_FROM_ADDRESS: "SELECT 1 FROM session WHERE customerId = ? AND remoteAddress = ? LIMIT 1",
 } as const;
 
 type DBLogin = {
@@ -250,11 +252,11 @@ export class AuthStore implements IAuthStore {
     }
 
     startSession(customerId: number, contextId: string): void {
-        const replaceSessions = this.database.transaction(() => {
-            this.database.prepare(SQL.DELETE_CUSTOMER_SESSIONS).run(customerId);
+        const addSession = this.database.transaction(() => {
+            this.database.prepare(SQL.DELETE_OLD_CUSTOMER_SESSIONS).run(customerId, customerId);
             this.database.prepare(SQL.UPDATE_SESSION).run(contextId, customerId, 0);
         });
-        replaceSessions();
+        addSession();
     }
 
     bindSessionAddress(contextId: string, remoteAddress: string): void {
@@ -264,11 +266,8 @@ export class AuthStore implements IAuthStore {
         }
     }
 
-    findSessionAddress(customerId: number): string | undefined {
-        const row = this.database.prepare(SQL.FIND_SESSION_ADDRESS).get(customerId) as
-            | { remoteAddress: string }
-            | undefined;
-        return row?.remoteAddress;
+    hasSessionFromAddress(customerId: number, remoteAddress: string): boolean {
+        return this.database.prepare(SQL.FIND_SESSION_FROM_ADDRESS).get(customerId, remoteAddress) !== undefined;
     }
 
     findCustomerByContext(contextId: string): UserRecordMini | undefined {

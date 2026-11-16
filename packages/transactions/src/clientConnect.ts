@@ -65,7 +65,7 @@ export async function clientConnect({
 
 	log.debug(`Looking up the session key for ${customerId}...`);
 
-	result = await databaseProvider.getSessionStore().fetchSessionKeyByCustomerId(customerId);
+	result = await databaseProvider.getSessionStore().fetchSessionKeyForPersona(customerId, personaId);
 
 	if (!result) {
 		log.error(`Session key not found for ${customerId}`);

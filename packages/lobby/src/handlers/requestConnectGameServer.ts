@@ -97,10 +97,11 @@ class PacketProcessor {
             let keys;
 
             try {
-                keys =
-                    await this.sessionStore.fetchSessionKeyByCustomerId(
-                        customerId,
-                    );
+                keys = await this.sessionStore.fetchSessionKeyByHash(
+                    customerId,
+                    inboundMessage._hashKey,
+                );
+                await this.sessionStore.bindPersonaSession(inboundMessage._userId, keys);
             } catch (err) {
                 this.log.warn(`Unable to fetch sessionkey`, {
                     connectionId: this.connectionId,
@@ -139,7 +140,7 @@ class PacketProcessor {
         // We have a session, we are good to go!
         await this.sessionStore.updateConnection(
             this.connectionId,
-            new LoginInfoMessage()._userId,
+            inboundMessage._userId,
         );
 
         // Send the response packet

@@ -131,7 +131,15 @@ export class SessionTestHelper {
 			databaseProvider.register({
 				session: {
 					updateSessionKey: async () => {},
-					fetchSessionKeyByCustomerId: async () => ({
+					bindPersonaSession: async () => {},
+					fetchSessionKeyForPersona: async () => ({
+						customerId: 0,
+						sessionKey: "test-session-key",
+						sKey: "test-s-key",
+						contextId: "test-context",
+						connectionId: "test-connection"
+					}),
+					fetchSessionKeyByHash: async () => ({
 						customerId: 0,
 						sessionKey: "test-session-key",
 						sKey: "test-s-key",
@@ -165,7 +173,7 @@ export class SessionTestHelper {
 					updateSession: () => {},
 					startSession: () => {},
 					bindSessionAddress: () => {},
-					findSessionAddress: () => undefined,
+					hasSessionFromAddress: () => false,
 					registerNewUser: () => {},
 					createLogin: async () => undefined,
 					setLoginPassword: async () => false,

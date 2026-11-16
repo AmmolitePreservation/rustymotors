@@ -39,7 +39,7 @@ export function isPlateTextWellFormed(text: string): boolean {
 }
 
 /**
- * Whether a request for this customer comes from the address its session logged in from. The
+ * Whether a request for this customer comes from an address one of its sessions logged in from. The
  * persona port's requests and the MCOTS connect carry a customer id and nothing that proves it.
  */
 export function isRequestFromCustomer(customerId: number): boolean {
@@ -47,5 +47,5 @@ export function isRequestFromCustomer(customerId: number): boolean {
 	if (typeof remoteAddress === "undefined") {
 		throw new Error("The request's connection has no remote address");
 	}
-	return databaseProvider.getAuthStore().findSessionAddress(customerId) === remoteAddress;
+	return databaseProvider.getAuthStore().hasSessionFromAddress(customerId, remoteAddress);
 }

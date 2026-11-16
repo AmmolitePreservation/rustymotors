@@ -33,7 +33,13 @@ export interface ISessionStore {
         connectionId: string,
     ): Promise<void>;
 
-    fetchSessionKeyByCustomerId(customerId: number): Promise<ConnectionRecord>;
+    // The customer's login whose session key hashes (MD5) to hashKey, as a lobby login names it.
+    fetchSessionKeyByHash(customerId: number, hashKey: Buffer): Promise<ConnectionRecord>;
+
+    bindPersonaSession(personaId: number, record: ConnectionRecord): Promise<void>;
+
+    // The login bound to the persona in the lobby, or the customer's only login; refuses otherwise.
+    fetchSessionKeyForPersona(customerId: number, personaId: number): Promise<ConnectionRecord>;
 
     fetchSessionKeyByConnectionId(connectionId: string): Promise<ConnectionRecord>;
 
@@ -102,14 +108,14 @@ export interface IAuthStore {
         profileId: number,
     ): void;
 
-    /** Makes contextId the customer's only session, ending any earlier one. */
+    /** Adds contextId as one of the customer's sessions; the customer's other logins go on. */
     startSession(customerId: number, contextId: string): void;
 
     /** Records the address the NPS login for contextId came from. */
     bindSessionAddress(contextId: string, remoteAddress: string): void;
 
-    /** The address the customer's session logged in from, if it has logged in. */
-    findSessionAddress(customerId: number): string | undefined;
+    /** Whether one of the customer's sessions logged in from remoteAddress. */
+    hasSessionFromAddress(customerId: number, remoteAddress: string): boolean;
 
     registerNewUser(
         username: string,

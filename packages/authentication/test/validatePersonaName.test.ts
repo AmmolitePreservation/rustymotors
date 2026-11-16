@@ -8,7 +8,7 @@ const loginAddress = '10.111.111.11';
 
 function registerStores(takenNames: string[]) {
     databaseProvider.register({
-        auth: { findSessionAddress: (customerId: number) => (customerId === 654321 ? loginAddress : undefined) },
+        auth: { hasSessionFromAddress: (customerId: number, address: string) => customerId === 654321 && address === loginAddress },
         persona: { isPersonaNameTaken: async (name: string) => takenNames.some((taken) => taken.toLowerCase() === name.toLowerCase()) },
     } as unknown as IDatabaseServices);
 }

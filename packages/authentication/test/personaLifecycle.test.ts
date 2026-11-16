@@ -20,7 +20,7 @@ type Store = {
 function registerStore(personas: PersonaSummary[], takenNames: string[] = []): Store {
     const store: Store = { personas: [...personas], created: [], deleted: [] };
     databaseProvider.register({
-        auth: { findSessionAddress: (customer: number) => (customer === customerId ? loginAddress : undefined) },
+        auth: { hasSessionFromAddress: (customer: number, address: string) => customer === customerId && address === loginAddress },
         persona: {
             listPersonas: async (customer: number) => store.personas.filter((persona) => persona.customerId === customer),
             createPersona: async (customer: number, name: string, shardId: number) => {

@@ -58,7 +58,7 @@ function registerStores(bankBalance = starterCash, carsOwned = marty.carsOwned, 
 	const calls: Calls = { options: [], physical: [], descriptions: [], purchases: [] };
 	const personas: PersonaSummary[] = [{ personaId, customerId, name: "Marty", shardId: 44, createStamp: 0x66000010 }];
 	databaseProvider.register({
-		auth: { findSessionAddress: (customer: number) => (customer === customerId ? loginAddress : undefined) },
+		auth: { hasSessionFromAddress: (customer: number, address: string) => customer === customerId && address === loginAddress },
 		persona: {
 			findPersona: async (id: number) => (isDeleted ? undefined : personas.find((persona) => persona.personaId === id)),
 			findPlayer: async (id: number) => (id === personaId ? { ...marty, carsOwned } : undefined),

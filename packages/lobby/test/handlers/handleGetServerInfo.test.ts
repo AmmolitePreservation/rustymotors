@@ -86,7 +86,9 @@ describe('handleGetServerInfo', () => {
     describe('cID=200 (game server from DB)', () => {
         const mockSessionStore: ISessionStore = {
             updateSessionKey: vi.fn(),
-            fetchSessionKeyByCustomerId: vi.fn(),
+            fetchSessionKeyByHash: vi.fn(),
+            bindPersonaSession: vi.fn(),
+            fetchSessionKeyForPersona: vi.fn(),
             fetchSessionKeyByConnectionId: vi.fn(),
             updateUser: vi.fn(),
             getUser: vi.fn(),

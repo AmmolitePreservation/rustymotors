@@ -20,6 +20,10 @@ import type {
     ISessionStore,
 } from "rusty-motors-shared";
 import type { UserInfo } from "rusty-motors-shared";
+import { createHash } from "node:crypto";
+
+// A customer's newest logins whose keys are kept; an older one's clients cannot open new connections.
+const maximumKeysPerCustomer = 100;
 
 /**
  * In-memory session store implementation
@@ -27,6 +31,8 @@ import type { UserInfo } from "rusty-motors-shared";
  */
 export class SessionStore implements ISessionStore {
     private sessions: ConnectionRecord[] = [];
+    // The login whose key each persona's client named in its lobby login (an MD5 of the key).
+    private personaSessions: Map<number, ConnectionRecord> = new Map();
     private users: Map<number, UserInfo> = new Map();
     private connections: Map<string, number> = new Map();
     private gameServers: Map<number, IRunningServerInfo> = new Map();
@@ -47,27 +53,54 @@ export class SessionStore implements ISessionStore {
             connectionId,
         };
 
-        const recordIndex = this.sessions.findIndex(
-            (session) => session.customerId === customerId,
-        );
-
-        if (recordIndex >= 0) {
-            this.sessions.splice(recordIndex, 1, updatedSession);
-        } else {
-            this.sessions.push(updatedSession);
+        // Every client of a customer keeps its own key: several clients of one login play at once.
+        this.sessions = this.sessions.filter((session) => session.contextId !== contextId);
+        this.sessions.push(updatedSession);
+        const customerSessions = this.sessions.filter((session) => session.customerId === customerId);
+        if (customerSessions.length > maximumKeysPerCustomer) {
+            const oldest = customerSessions[0]!;
+            this.sessions = this.sessions.filter((session) => session !== oldest);
+            for (const [personaId, session] of this.personaSessions) {
+                if (session === oldest) {
+                    this.personaSessions.delete(personaId);
+                }
+            }
         }
     }
 
-    async fetchSessionKeyByCustomerId(
+    async fetchSessionKeyByHash(
         customerId: number,
+        hashKey: Buffer,
     ): Promise<ConnectionRecord> {
         const record = this.sessions.find(
-            (session) => session.customerId === customerId,
+            (session) => session.customerId === customerId &&
+                createHash("md5").update(Buffer.from(session.sessionKey, "hex")).digest().equals(hashKey),
         );
         if (typeof record === "undefined") {
-            throw new Error(`Session key not found for customer ${customerId}`);
+            throw new Error(`No login of customer ${customerId} has the session key the lobby login names`);
         }
         return record;
+    }
+
+    async bindPersonaSession(personaId: number, record: ConnectionRecord): Promise<void> {
+        this.personaSessions.set(personaId, record);
+    }
+
+    async fetchSessionKeyForPersona(
+        customerId: number,
+        personaId: number,
+    ): Promise<ConnectionRecord> {
+        const bound = this.personaSessions.get(personaId);
+        if (typeof bound !== "undefined" && bound.customerId === customerId) {
+            return bound;
+        }
+        const customerSessions = this.sessions.filter((session) => session.customerId === customerId);
+        if (customerSessions.length === 1) {
+            return customerSessions[0]!;
+        }
+        throw new Error(
+            `Customer ${customerId} has ${customerSessions.length} logins and persona ${personaId} chose none of them in the lobby`,
+        );
     }
 
     async fetchSessionKeyByConnectionId(
