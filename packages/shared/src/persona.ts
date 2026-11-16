@@ -8,10 +8,10 @@ import { databaseProvider } from "./database/DatabaseProvider.js";
 export const starterCash = 10000;
 
 /**
- * The most personas one account may have. The client reads it from the persona list and, per shard,
- * from the shard list's MaxPersonasPerUser.
+ * The most personas one account may have: one login holds all of a player's personas. The client reads it
+ * from the persona list, where it is one byte, and, per shard, from the shard list's MaxPersonasPerUser.
  */
-export const maximumPersonasPerCustomer = 5;
+export const maximumPersonasPerCustomer = 100;
 
 /**
  * Every persona's level, points to the next level and reputation rank until racing earns points: what

@@ -192,8 +192,9 @@ describe("account service persona moves", () => {
 	it("refuses a malformed list of personas", async () => {
 		registerLogins(twoLogins);
 		const move = (characters: unknown) => call("/v1/characters/move", { characters, from: "Marty_88", to: "martymcfly" });
-		expect(await move([])).toEqual([400, { error: "characters must list 1 to 5 persona names" }]);
-		expect(await move(["a", "b", "c", "d", "e", "f"])).toEqual([400, { error: "characters must list 1 to 5 persona names" }]);
+		expect(await move([])).toEqual([400, { error: "characters must list 1 to 100 persona names" }]);
+		expect(await move(Array.from({ length: 101 }, (_, index) => `P${index}`))).toEqual(
+			[400, { error: "characters must list 1 to 100 persona names" }]);
 		expect(await move(["x".repeat(31)])).toEqual([400, { error: "characters holds a name that is not 1 to 30 characters of text" }]);
 		expect(await move([7])).toEqual([400, { error: "characters holds a name that is not 1 to 30 characters of text" }]);
 	});

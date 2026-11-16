@@ -37,12 +37,12 @@ afterEach(() => databaseProvider.unregister());
 describe('personaMapsBody', () => {
     it('lays each record out with its length, the ids, the stamp, and the name, then the persona limit', () => {
         expect(personaMapsBody([drBrown]).toString('hex')).toBe(
-            '0001' + '001a' + '0009fbf1' + '00000015' + '0000002c' + '66000000' + '0008' + Buffer.from('Dr Brown').toString('hex') + '05',
+            '0001' + '001a' + '0009fbf1' + '00000015' + '0000002c' + '66000000' + '0008' + Buffer.from('Dr Brown').toString('hex') + '64',
         );
     });
 
     it('is a zero count and the limit when there are no personas', () => {
-        expect(personaMapsBody([]).toString('hex')).toBe('000005');
+        expect(personaMapsBody([]).toString('hex')).toBe('000064');
     });
 });
 

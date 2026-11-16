@@ -105,12 +105,12 @@ describe('createPersona', () => {
         expect(bytes.subarray(12)).toEqual(gamePersonaRecord({ personaId: 1000, customerId, name: 'Marty', shardId: 44, createStamp: 0x66000010 }));
     });
 
-    it('answers 0x612 with the limit once the account has 5 personas', async () => {
-        const five = [21, 22, 23, 24, 25].map((personaId) => ({ ...drBrown, personaId, name: `P${personaId}` }));
-        const store = registerStore(five);
+    it('answers 0x612 with the limit once the account has 100 personas', async () => {
+        const full = Array.from({ length: 100 }, (_, index) => ({ ...drBrown, personaId: 21 + index, name: `P${21 + index}` }));
+        const store = registerStore(full);
         const bytes = await reply(createPersona, createRequest('Marty', 44));
         expect(store.created).toEqual([]);
-        expect(bytes.toString('hex')).toBe('06120010010100000000000000000005');
+        expect(bytes.toString('hex')).toBe('06120010010100000000000000000064');
     });
 
     it('answers 0x20A when the name was taken first', async () => {
